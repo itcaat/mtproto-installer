@@ -102,19 +102,39 @@ run_compose() {
 
 # --- Вывод ссылки
 print_link() {
-	local SECRET
-	SECRET=$(cat "${INSTALL_DIR}/.secret" 2>/dev/null || true)
-	[[ -z "$SECRET" ]] && err "Секрет не найден в ${INSTALL_DIR}/.secret"
-	SERVER_IP=$(curl -s --connect-timeout 3 ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
-	LINK="tg://proxy?server=${SERVER_IP}&port=443&secret=${SECRET}"
-	echo ""
-	echo -e "${GREEN}--- Ссылка для Telegram ---${NC}"
-	echo "${LINK}"
-	echo ""
-	echo "Сохраните ссылку и не публикуйте её публично."
-	echo "Данные установки: ${INSTALL_DIR}"
-	echo "Логи: cd ${INSTALL_DIR} && docker compose logs -f"
-	echo "Остановка: cd ${INSTALL_DIR} && docker compose down"
+  local SECRET TLS_DOMAIN DOMAIN_HEX LONG_SECRET SERVER_IP LINK
+
+  SECRET=$(cat "${INSTALL_DIR}/.secret" 2>/dev/null || true)
+  [[ -z "$SECRET" ]] && err "Секрет не найден в ${INSTALL_DIR}/.secret"
+
+  # Достаём tls_domain из telemt.toml
+  TLS_DOMAIN=$(grep -E '^[[:space:]]*tls_domain[[:space:]]*=' "${INSTALL_DIR}/telemt.toml" \
+    | head -n1 | sed -E 's/.*=[[:space:]]*"([^"]+)".*/\1/')
+  [[ -z "$TLS_DOMAIN" ]] && err "tls_domain не найден в ${INSTALL_DIR}/telemt.toml"
+
+  # hex(domain)
+  DOMAIN_HEX=$(printf '%s' "$TLS_DOMAIN" | xxd -p -c 256)
+
+  # Если в файле короткий секрет (32 hex), достраиваем fake-tls secret:
+  # ee + 32hex + hex(domain)
+  if [[ "$SECRET" =~ ^[0-9a-fA-F]{32}$ ]]; then
+    LONG_SECRET="ee${SECRET}${DOMAIN_HEX}"
+  else
+    # если уже длинный (например начинается с ee), используем как есть
+    LONG_SECRET="$SECRET"
+  fi
+
+  SERVER_IP=$(curl -s --connect-timeout 3 ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
+  LINK="tg://proxy?server=${SERVER_IP}&port=443&secret=${LONG_SECRET}"
+
+  echo ""
+  echo -e "${GREEN}--- Ссылка для Telegram ---${NC}"
+  echo "${LINK}"
+  echo ""
+  echo "Сохраните ссылку и не публикуйте её публично."
+  echo "Данные установки: ${INSTALL_DIR}"
+  echo "Логи: cd ${INSTALL_DIR} && docker compose logs -f"
+  echo "Остановка: cd ${INSTALL_DIR} && docker compose down"
 }
 
 # --- Main
