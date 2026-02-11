@@ -25,11 +25,55 @@ curl -sSL https://raw.githubusercontent.com/itcaat/mtproto-installer/main/instal
 3. Запуск: `docker compose up -d`.
 4. Ссылка: `tg://proxy?server=ВАШ_IP&port=443&secret=ВАШ_СЕКРЕТ`.
 
+## Устранение проблем
+
+### Не подключается к прокси в Telegram
+
+Проверьте по шагам (команды выполнять на сервере в каталоге установки, например `cd ~/mtproxy-data` или `cd /opt/mtproxy`):
+
+1. **Контейнеры запущены**
+   ```bash
+   docker compose ps
+   ```
+   Оба сервиса должны быть в состоянии `Up`.
+
+2. **Порт 443 слушается**
+   ```bash
+   ss -tlnp | grep 443
+   ```
+   Должен быть процесс docker/proxy на `:443`.
+
+3. **Файрвол и облачный доступ**
+   - Локально: `sudo ufw status` — если активен, нужен `sudo ufw allow 443/tcp && sudo ufw reload`.
+   - В панели VPS/облака (AWS Security Group, GCP firewall и т.п.) должен быть открыт входящий TCP 443.
+
+4. **IP в ссылке совпадает с сервером**
+   На сервере: `curl -s ifconfig.me`. В ссылке `tg://proxy?server=...` должен быть этот IP (или ваш домен, если он указывает на этот сервер).
+
+5. **Ссылка с полным Fake TLS-секретом**
+   Должна быть из вывода установки (формат `ee` + 32 hex + hex домена). Если в выводе скрипта был только короткий секрет (32 символа) — правильную ссылку можно взять из логов Telemt: `docker compose logs mtproxy-telemt` (строка «EE-TLS: tg://proxy?…»), замените в ней **port=1234** на **port=443**.
+
+6. **Домен маскировки совпадает в конфигах**
+   ```bash
+   grep tls_domain telemt.toml
+   grep HostSNI traefik/dynamic/tcp.yml
+   ```
+   Домен в обоих местах должен быть один и тот же (например `1c.ru`).
+
+7. **Проверка с другой машины**
+   ```bash
+   openssl s_client -connect ВАШ_IP:443 -servername 1c.ru </dev/null
+   ```
+   Подставьте ваш IP и домен из `tls_domain`. Должно быть установлено TLS-соединение (в конце может быть «Certificate chain» или «Verify return code»). Если «Connection refused» — не открыт 443 или файрвол.
+
+- **`Error while peeking client hello bytes error=EOF`** в логах Traefik — обычно это проверки доступности (health check) или сканеры: кто-то открывает TCP на 443 и закрывает соединение до TLS. На работу прокси не влияет, можно игнорировать.
+
 ## Полезные команды
 
 - Логи: `docker compose logs -f`
 - Остановка: `docker compose down`
 - Перезапуск после смены конфига: `docker compose up -d --force-recreate`
+- **После рестарта сервера** контейнеры поднимутся сами (политика `restart: unless-stopped`). Нужно, чтобы при загрузке запускался Docker: `sudo systemctl enable docker`.
 
 ## Безопасность
 

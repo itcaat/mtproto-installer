@@ -88,8 +88,8 @@ download_and_configure() {
 	    "$tcp_yml" > "${tcp_yml}.tmp" && mv "${tcp_yml}.tmp" "$tcp_yml"
 	info "Настроен Traefik: SNI ${FAKE_DOMAIN} -> telemt:${TELEMT_INTERNAL_PORT} (TLS passthrough)"
 
-	# Сохранить секрет для вывода в конце
-	echo "$SECRET" > "${INSTALL_DIR}/.secret"
+	# Сохранить секрет без перевода строки (иначе длинная ссылка не соберётся)
+	printf '%s' "$SECRET" > "${INSTALL_DIR}/.secret"
 }
 
 # --- Запуск контейнеров
@@ -100,13 +100,25 @@ run_compose() {
 	info "Контейнеры запущены."
 }
 
-# --- Вывод ссылки
+# --- Вывод ссылки (Fake TLS: в ссылке секрет в формате ee + 32hex + hex(domain))
 print_link() {
-	local SECRET
-	SECRET=$(cat "${INSTALL_DIR}/.secret" 2>/dev/null || true)
+	local SECRET TLS_DOMAIN DOMAIN_HEX LONG_SECRET SERVER_IP LINK
+	SECRET=$(cat "${INSTALL_DIR}/.secret" 2>/dev/null | tr -d '\n\r')
 	[[ -z "$SECRET" ]] && err "Секрет не найден в ${INSTALL_DIR}/.secret"
+
+	TLS_DOMAIN=$(grep -E '^[[:space:]]*tls_domain[[:space:]]*=' "${INSTALL_DIR}/telemt.toml" \
+		| head -n1 | sed -E 's/.*=[[:space:]]*"([^"]+)".*/\1/')
+	[[ -z "$TLS_DOMAIN" ]] && err "tls_domain не найден в ${INSTALL_DIR}/telemt.toml"
+
+	DOMAIN_HEX=$(printf '%s' "$TLS_DOMAIN" | xxd -p -c 256)
+	if [[ "$SECRET" =~ ^[0-9a-fA-F]{32}$ ]]; then
+		LONG_SECRET="ee${SECRET}${DOMAIN_HEX}"
+	else
+		LONG_SECRET="$SECRET"
+	fi
+
 	SERVER_IP=$(curl -s --connect-timeout 3 ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
-	LINK="tg://proxy?server=${SERVER_IP}&port=443&secret=${SECRET}"
+	LINK="tg://proxy?server=${SERVER_IP}&port=443&secret=${LONG_SECRET}"
 	echo ""
 	echo -e "${GREEN}--- Ссылка для Telegram ---${NC}"
 	echo "${LINK}"
