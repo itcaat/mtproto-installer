@@ -96,7 +96,7 @@ print_link() {
 		| head -n1 | sed -E 's/.*=[[:space:]]*"([^"]+)".*/\1/')
 	[[ -z "$TLS_DOMAIN" ]] && err "tls_domain не найден в ${INSTALL_DIR}/telemt.toml"
 
-	DOMAIN_HEX=$(printf '%s' "$TLS_DOMAIN" | xxd -p -c 256)
+	DOMAIN_HEX=$(printf '%s' "$TLS_DOMAIN" | od -An -tx1 | tr -d ' \n')
 	if [[ "$SECRET" =~ ^[0-9a-fA-F]{32}$ ]]; then
 		LONG_SECRET="ee${SECRET}${DOMAIN_HEX}"
 	else
